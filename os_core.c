@@ -83,7 +83,7 @@ int32_t os_task_create(os_task_fn fn, void *arg, const char *name, uint8_t prio,
     *--sp = (uint32_t)arg;              // R0: task argument
 
     /* Software frame: popped by PendSV_Handler (LDMIA {R4-R11, LR}) */
-    *--sp = 0xFFFFFFFDu;                // EXC_RETURN: Thread mode, PSP, no FPU frame
+    *--sp = 0xFFFFFFFDu;                // EXC_RETURN: Thread mode, PSP, no FPU frame. (EXC_RETURN contains information about how the processor should return from the exception)
     sp -= 8;                            // R11..R4: don't care (canary)
 
     t->sp          = sp;
