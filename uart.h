@@ -16,6 +16,4 @@ os_status_t uart_transmit(char data);
 
 char uart_receive();
 
-void UART0_Handler(void);
-
 #endif /* UART_H_ */
