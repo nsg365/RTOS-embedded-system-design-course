@@ -57,6 +57,7 @@ extern uint32_t __STACK_TOP;
 extern void PendSV_Handler(void);       // os_asm.asm: context switch
 extern void SysTick_Handler(void);      // os_core.c: RTOS tick
 extern void os_hardfault_handler(void); // os_asm.asm: fault report
+extern void UART0_Handler(void);
 
 //*****************************************************************************
 //
@@ -90,7 +91,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port C
     IntDefaultHandler,                      // GPIO Port D
     IntDefaultHandler,                      // GPIO Port E
-    IntDefaultHandler,                      // UART0 Rx and Tx
+    UART0_Handler,                          // UART0 Rx and Tx
     IntDefaultHandler,                      // UART1 Rx and Tx
     IntDefaultHandler,                      // SSI0 Rx and Tx
     IntDefaultHandler,                      // I2C0 Master and Slave
