@@ -5,9 +5,58 @@
  *      Author: Emil Ben, EE23BT024
  */
 
+#include "tm4c123gh6pm.h"
 #include "os.h"
 
 #define BUF_SIZE 128
+
+typedef struct {
+
+    volatile uint32_t * const data_reg;
+    volatile uint32_t * const im_reg;
+    volatile uint32_t * const mis_reg;
+    volatile uint32_t * const icr_reg;
+
+    char tx_buf[BUF_SIZE];
+    char rx_buf[BUF_SIZE];
+
+    uint8_t tx_head;
+    uint8_t tx_tail;
+    uint8_t rx_head;
+    uint8_t rx_tail;
+
+    sem_t tx_sem;
+    sem_t rx_sem;
+
+} uart_t;
+
+uart_t uart0 {
+
+    .dr_reg = UART0_DR_R;
+    .im_reg = UART0_IM_R;
+    .mis_reg = UART0_MIS_R;
+    .icr_reg = UART0_ICR_R;
+
+    .tx_head = 0;
+    .tx_tail = 0;
+    .rx_head = 0;
+    .rx_tail = 0;
+
+}
+
+uart_t uart1 {
+
+    .dr_reg = UART1_DR_R;
+    .im_reg = UART1_IM_R;
+    .mis_reg = UART1_MIS_R;
+    .icr_reg = UART1_ICR_R;
+
+    .tx_head = 0;
+    .tx_tail = 0;
+    .rx_head = 0;
+    .rx_tail = 0;
+
+}
 
 // Add functionality to select UART module and baud rate. Check whether we need to use FIFOs.
 
@@ -20,13 +69,10 @@ uint8_t rx0_buf_head, rx0_buf_tail;
 volatile sem_t uart0_tx_sem;
 volatile sem_t uart0_rx_sem;
 
-void uart_init() {
+void uart_init(uart_t * uart) {
 
-    tx0_buf_head = 0; tx0_buf_tail = 0;
-    rx0_buf_head = 0; rx0_buf_tail = 0;
-
-    sem_init(&uart0_tx_sem, BUF_SIZE, BUF_SIZE);
-    sem_init(&uart0_rx_sem, 0, BUF_SIZE);
+    sem_init(&(uart->tx_sem), BUF_SIZE, BUF_SIZE);
+    sem_init(&(uart->rx_sem), 0, BUF_SIZE);
 
     SYSCTL_RCGCUART_R |= 0x01;
     SYSCTL_RCGCGPIO_R |= 0x01;
@@ -50,74 +96,81 @@ void uart_init() {
 
 }
 
-os_status_t uart_transmit(char data) {
+os_status_t uart_transmit(uart_t *uart, char data) {
 
-    os_status_t status = sem_wait(&uart0_tx_sem, OS_FOREVER);
+    os_status_t status = sem_wait(&(uart->tx_sem), OS_FOREVER);
 
     if (status == OS_OK) {
-        uart0_tx_buf[tx0_buf_head] = data;
-        tx0_buf_head = (tx0_buf_head + 1) % BUF_SIZE;
+        uart->tx_buf[uart->tx_head] = data;
+        uart->tx_head = (uart->tx_head + 1) % BUF_SIZE;
 
-        UART0_IM_R |= (1<<5);
+        uart->im_reg |= (1<<5);
     }
 
     return status;
 
 }
 
-char uart_receive() {
+char uart_receive(uart_t *uart) {
 
-    os_status_t status = sem_wait(&uart0_rx_sem, OS_FOREVER);
+    os_status_t status = sem_wait(&(uart->rx_sem), OS_FOREVER);
 
     char data = 0;
 
     if (status == OS_OK) {
-        data = uart0_rx_buf[rx0_buf_tail];
-        rx0_buf_tail = (rx0_buf_tail + 1) % BUF_SIZE;
+        data = uart->rx_buf[uart->rx_tail];
+        uart->rx_tail = (uart->rx_tail + 1) % BUF_SIZE;
     }
 
     return data;
 
 }
 
-void UART0_Handler(void) {
+void UART_Handler(uart_t *uart) {
 
-    if (UART0_MIS_R & (1<<5)) {
+    if (uart->mis_reg & (1<<5)) {
 
-        if (tx0_buf_tail != tx0_buf_head) {
+        if (uart->tx_tail != uart->tx_head) {
 
-            UART0_DR_R = uart0_tx_buf[tx0_buf_tail];
-            tx0_buf_tail = (tx0_buf_tail + 1) % BUF_SIZE;
-            sem_post_isr(&uart0_tx_sem);
+            uart->data_reg = uart->tx_buf[uart->tx_tail];
+            uart->tx_tail = (uart->tx_tail + 1) % BUF_SIZE;
+            sem_post_isr(&(uart->tx_sem));
 
         } else {
 
-            UART0_IM_R &= ~(1<<5);
+            uart->im_reg &= ~(1<<5);
 
         }
 
-        UART0_ICR_R = (1<<5);
+        uart->icr_reg = (1<<5);
 
     }
 
-    if (UART0_MIS_R & (1<<4)) {
+    if (uart->mis_reg & (1<<4)) {
 
-        if (rx0_buf_tail != (rx0_buf_head + 1) % BUF_SIZE) {
+        if (uart->rx_tail != (uart->rx_head + 1) % BUF_SIZE) {
 
-            uart0_rx_buf[rx0_buf_head] = UART0_DR_R;
-            rx0_buf_head = (rx0_buf_head + 1) % BUF_SIZE;
-            sem_post_isr(&uart0_rx_sem);
+            uart->rx_buf[uart->rx_head] = uart->data_reg;
+            uart->rx_head = (uart->rx_head + 1) % BUF_SIZE;
+            sem_post_isr(&(uart->rx_sem));
 
         } else {
-            char dropped = UART0_DR_R;
+            char dropped = uart->data_reg;
         }
 
-        UART0_ICR_R = (1<<4);
+        uart->icr_reg = (1<<4);
 
     }
 
 }
 
+void UART0_Handler() {
+    UART_Handler(&uart0);
+}
+
+void UART1_Handler() {
+    UART_Handler(&uart1);
+}
 
 
 
