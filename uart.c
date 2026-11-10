@@ -7,75 +7,50 @@
 
 #include "tm4c123gh6pm.h"
 #include "os.h"
+#include "uart.h"
 
-#define BUF_SIZE 128
+uart_t uart0 = {
 
-typedef struct {
+    .data_reg = &UART0_DR_R,
+    .im_reg = &UART0_IM_R,
+    .mis_reg = &UART0_MIS_R,
+    .icr_reg = &UART0_ICR_R,
 
-    volatile uint32_t * const data_reg;
-    volatile uint32_t * const im_reg;
-    volatile uint32_t * const mis_reg;
-    volatile uint32_t * const icr_reg;
+    .tx_head = 0,
+    .tx_tail = 0,
+    .rx_head = 0,
+    .rx_tail = 0
 
-    char tx_buf[BUF_SIZE];
-    char rx_buf[BUF_SIZE];
+};
 
-    uint8_t tx_head;
-    uint8_t tx_tail;
-    uint8_t rx_head;
-    uint8_t rx_tail;
+uart_t uart1 = {
 
-    sem_t tx_sem;
-    sem_t rx_sem;
+    .data_reg = &UART1_DR_R,
+    .im_reg = &UART1_IM_R,
+    .mis_reg = &UART1_MIS_R,
+    .icr_reg = &UART1_ICR_R,
 
-} uart_t;
+    .tx_head = 0,
+    .tx_tail = 0,
+    .rx_head = 0,
+    .rx_tail = 0
 
-uart_t uart0 {
-
-    .dr_reg = UART0_DR_R;
-    .im_reg = UART0_IM_R;
-    .mis_reg = UART0_MIS_R;
-    .icr_reg = UART0_ICR_R;
-
-    .tx_head = 0;
-    .tx_tail = 0;
-    .rx_head = 0;
-    .rx_tail = 0;
-
-}
-
-uart_t uart1 {
-
-    .dr_reg = UART1_DR_R;
-    .im_reg = UART1_IM_R;
-    .mis_reg = UART1_MIS_R;
-    .icr_reg = UART1_ICR_R;
-
-    .tx_head = 0;
-    .tx_tail = 0;
-    .rx_head = 0;
-    .rx_tail = 0;
-
-}
+};
 
 // Add functionality to select UART module and baud rate. Check whether we need to use FIFOs.
 
-char uart0_tx_buf[BUF_SIZE];
-char uart0_rx_buf[BUF_SIZE];
+void uart0_init() {
 
-uint8_t tx0_buf_head, tx0_buf_tail;
-uint8_t rx0_buf_head, rx0_buf_tail;
+    mutex_init(&uart0.uart_mutex);
 
-volatile sem_t uart0_tx_sem;
-volatile sem_t uart0_rx_sem;
-
-void uart_init(uart_t * uart) {
-
-    sem_init(&(uart->tx_sem), BUF_SIZE, BUF_SIZE);
-    sem_init(&(uart->rx_sem), 0, BUF_SIZE);
+    sem_init(&(uart0.tx_sem), BUF_SIZE, BUF_SIZE);
+    sem_init(&(uart0.rx_sem), 0, BUF_SIZE);
 
     SYSCTL_RCGCUART_R |= 0x01;
+
     SYSCTL_RCGCGPIO_R |= 0x01;
+    while ((SYSCTL_PRGPIO_R & 0x01) == 0);
+
     GPIO_PORTA_AFSEL_R |= 0x03;
     GPIO_PORTA_PCTL_R |= 0x11;
     GPIO_PORTA_DEN_R |= 0x03;
@@ -96,7 +71,43 @@ void uart_init(uart_t * uart) {
 
 }
 
-os_status_t uart_transmit(uart_t *uart, char data) {
+void uart1_init() {
+
+    mutex_init(&uart1.uart_mutex);
+
+    sem_init(&(uart1.tx_sem), BUF_SIZE, BUF_SIZE);
+    sem_init(&(uart1.rx_sem), 0, BUF_SIZE);
+
+    SYSCTL_RCGCUART_R |= 0x02;
+
+    SYSCTL_RCGCGPIO_R |= 0x02;
+    while ((SYSCTL_PRGPIO_R & 0x02) == 0);
+
+    GPIO_PORTB_AFSEL_R |= 0x03;
+    GPIO_PORTB_PCTL_R |= 0x11;
+    GPIO_PORTB_DEN_R |= 0x03;
+
+    UART1_CTL_R &= 0xFFFFFFFE;
+
+    //Baud Rate 115200
+    UART1_IBRD_R = 0xA;
+    UART1_FBRD_R = 0x2C;
+
+    UART1_LCRH_R = 0x60;          // 8-bit, no parity, 1 stop
+    UART1_CC_R = 0x00;
+
+    UART1_IM_R |= (1<<4);
+    NVIC_EN0_R |= (1<<6);
+
+    UART1_CTL_R |= 0x301;
+
+}
+
+static os_status_t uart_transmit_raw(uart_t *uart, char data) {
+
+    if (uart == NULL) {
+        return OS_ERROR;
+    }
 
     os_status_t status = sem_wait(&(uart->tx_sem), OS_FOREVER);
 
@@ -104,8 +115,24 @@ os_status_t uart_transmit(uart_t *uart, char data) {
         uart->tx_buf[uart->tx_head] = data;
         uart->tx_head = (uart->tx_head + 1) % BUF_SIZE;
 
-        uart->im_reg |= (1<<5);
+        *(uart->im_reg) |= (1<<5);
     }
+
+    return status;
+
+}
+
+os_status_t uart_transmit(uart_t *uart, char data) {
+
+    if (uart == NULL) {
+        return OS_ERROR;
+    }
+
+    os_status_t status;
+
+    mutex_lock(&(uart->uart_mutex),OS_FOREVER);
+    status = uart_transmit_raw(uart,data);
+    mutex_unlock(&(uart->uart_mutex));
 
     return status;
 
@@ -113,52 +140,87 @@ os_status_t uart_transmit(uart_t *uart, char data) {
 
 char uart_receive(uart_t *uart) {
 
+    if (uart == NULL) {
+        return 0;
+    }
+
     os_status_t status = sem_wait(&(uart->rx_sem), OS_FOREVER);
 
     char data = 0;
 
     if (status == OS_OK) {
+        mutex_lock(&(uart->uart_mutex),OS_FOREVER);
         data = uart->rx_buf[uart->rx_tail];
         uart->rx_tail = (uart->rx_tail + 1) % BUF_SIZE;
+        mutex_unlock(&(uart->uart_mutex));
     }
 
     return data;
 
 }
 
+os_status_t uart_send_string(uart_t *uart, const char *data) {
+
+    if (uart == NULL || data == NULL) {
+        return OS_ERROR;
+    }
+
+    os_status_t status;
+
+    mutex_lock(&(uart->uart_mutex),OS_FOREVER);
+    while (*data != '\0') {
+
+        status = uart_transmit_raw(uart,*data);
+        if(status == OS_OK) {
+            data++;
+            continue;
+        } else {
+            mutex_unlock(&(uart->uart_mutex));
+            return status;
+        }
+
+    }
+    mutex_unlock(&(uart->uart_mutex));
+
+    return OS_OK;
+
+}
+
 void UART_Handler(uart_t *uart) {
 
-    if (uart->mis_reg & (1<<5)) {
+    uint32_t int_status = *(uart->mis_reg);
+
+    if (int_status & (1<<5)) {
 
         if (uart->tx_tail != uart->tx_head) {
 
-            uart->data_reg = uart->tx_buf[uart->tx_tail];
+            *(uart->data_reg) = uart->tx_buf[uart->tx_tail];
             uart->tx_tail = (uart->tx_tail + 1) % BUF_SIZE;
             sem_post_isr(&(uart->tx_sem));
 
         } else {
 
-            uart->im_reg &= ~(1<<5);
+            *(uart->im_reg) &= ~(1<<5);
 
         }
 
-        uart->icr_reg = (1<<5);
+        *(uart->icr_reg) = (1<<5);
 
     }
 
-    if (uart->mis_reg & (1<<4)) {
+    if (int_status & (1<<4)) {
 
         if (uart->rx_tail != (uart->rx_head + 1) % BUF_SIZE) {
 
-            uart->rx_buf[uart->rx_head] = uart->data_reg;
+            uart->rx_buf[uart->rx_head] = *(uart->data_reg);
             uart->rx_head = (uart->rx_head + 1) % BUF_SIZE;
             sem_post_isr(&(uart->rx_sem));
 
         } else {
-            char dropped = uart->data_reg;
+            char dropped = *(uart->data_reg);
         }
 
-        uart->icr_reg = (1<<4);
+        *(uart->icr_reg) = (1<<4);
 
     }
 
