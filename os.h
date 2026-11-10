@@ -17,7 +17,8 @@
 /* Config */
 #define OS_CPU_HZ           16000000u   // system clock - 16 MHz
 #define OS_TICK_HZ          1000u       // SysTick rate: 1 ms tick
-#define OS_TIME_SLICE       10u         // round-robin slice, in ticks
+ #define OS_TIME_SLICE       10u         // round-robin slice, in ticks
+//#define OS_TIME_SLICE       500u //only for testing if task switching between red and blue is working properly. comment this and uncomment the above line to get the default time slice of 10ms
 #define OS_MAX_TASKS        8u          // including the idle task
 #define OS_NUM_PRIO         8u          // priorities 0 (highest) .. 7
 #define OS_PRIO_IDLE        (OS_NUM_PRIO - 1u)
