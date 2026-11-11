@@ -176,7 +176,7 @@ os_status_t uart_send_string(uart_t *uart, const char *data) {
             data++;
             continue;
         } else {
-            mutex_unlock(&(uart->uart_mutex));
+            res_release(uart->res_id);
             return status;
         }
 
