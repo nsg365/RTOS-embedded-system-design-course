@@ -9,7 +9,7 @@
 #include "os.h"
 #include "uart.h"
 
-uart_t uart0 = {
+static uart_t uart0_instance = {
 
     .data_reg = &UART0_DR_R,
     .im_reg = &UART0_IM_R,
@@ -21,9 +21,11 @@ uart_t uart0 = {
     .rx_head = 0,
     .rx_tail = 0
 
+    .res_id = RES_UART0_TX;
+
 };
 
-uart_t uart1 = {
+static uart_t uart1_instance = {
 
     .data_reg = &UART1_DR_R,
     .im_reg = &UART1_IM_R,
@@ -35,16 +37,17 @@ uart_t uart1 = {
     .rx_head = 0,
     .rx_tail = 0
 
+    .res_id = RES_UART1_TX;
+
 };
 
-// Add functionality to select UART module and baud rate. Check whether we need to use FIFOs.
+uart_t * const uart0 = &uart0_instance;
+uart_t * const uart1 = &uart1_instance;
 
 void uart0_init() {
 
-    mutex_init(&uart0.uart_mutex);
-
-    sem_init(&(uart0.tx_sem), BUF_SIZE, BUF_SIZE);
-    sem_init(&(uart0.rx_sem), 0, BUF_SIZE);
+    sem_init(&(uart0->tx_sem), BUF_SIZE, BUF_SIZE);
+    sem_init(&(uart0->rx_sem), 0, BUF_SIZE);
 
     SYSCTL_RCGCUART_R |= 0x01;
 
@@ -73,10 +76,8 @@ void uart0_init() {
 
 void uart1_init() {
 
-    mutex_init(&uart1.uart_mutex);
-
-    sem_init(&(uart1.tx_sem), BUF_SIZE, BUF_SIZE);
-    sem_init(&(uart1.rx_sem), 0, BUF_SIZE);
+    sem_init(&(uart1->tx_sem), BUF_SIZE, BUF_SIZE);
+    sem_init(&(uart1->rx_sem), 0, BUF_SIZE);
 
     SYSCTL_RCGCUART_R |= 0x02;
 
@@ -130,9 +131,9 @@ os_status_t uart_transmit(uart_t *uart, char data) {
 
     os_status_t status;
 
-    mutex_lock(&(uart->uart_mutex),OS_FOREVER);
+    res_acquire(uart->res_id,OS_FOREVER);
     status = uart_transmit_raw(uart,data);
-    mutex_unlock(&(uart->uart_mutex));
+    res_release(uart->res_id);
 
     return status;
 
@@ -149,10 +150,10 @@ char uart_receive(uart_t *uart) {
     char data = 0;
 
     if (status == OS_OK) {
-        mutex_lock(&(uart->uart_mutex),OS_FOREVER);
+        res_acquire(uart->res_id,OS_FOREVER);
         data = uart->rx_buf[uart->rx_tail];
         uart->rx_tail = (uart->rx_tail + 1) % BUF_SIZE;
-        mutex_unlock(&(uart->uart_mutex));
+        res_release(uart->res_id);
     }
 
     return data;
@@ -167,7 +168,7 @@ os_status_t uart_send_string(uart_t *uart, const char *data) {
 
     os_status_t status;
 
-    mutex_lock(&(uart->uart_mutex),OS_FOREVER);
+    res_acquire(uart->res_id,OS_FOREVER);
     while (*data != '\0') {
 
         status = uart_transmit_raw(uart,*data);
@@ -180,7 +181,7 @@ os_status_t uart_send_string(uart_t *uart, const char *data) {
         }
 
     }
-    mutex_unlock(&(uart->uart_mutex));
+    res_release(uart->res_id);
 
     return OS_OK;
 
@@ -227,11 +228,11 @@ void UART_Handler(uart_t *uart) {
 }
 
 void UART0_Handler() {
-    UART_Handler(&uart0);
+    UART_Handler(uart0);
 }
 
 void UART1_Handler() {
-    UART_Handler(&uart1);
+    UART_Handler(uart1);
 }
 
 

@@ -30,9 +30,12 @@ typedef struct {
     sem_t tx_sem;
     sem_t rx_sem;
 
-    mutex_t uart_mutex;
+    res_id_t res_id;
 
 } uart_t;
+
+extern uart_t * const uart0;
+extern uart_t * const uart1;
 
 void uart0_init();
 
