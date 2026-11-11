@@ -53,7 +53,7 @@ void uart_init() {
 
 }
 
-os_status_t uart_transmit(char data) {
+static os_status_t uart_transmit_raw(char data) {
 
     os_status_t status = sem_wait(&uart0_tx_sem, OS_FOREVER);
 
@@ -68,6 +68,18 @@ os_status_t uart_transmit(char data) {
 
 }
 
+os_status_t uart_transmit(char data) {
+
+    os_status_t status;
+
+        res_acquire(res_id,OS_FOREVER);
+        status = uart_transmit_raw(data);
+        res_release(res_id);
+
+        return status;
+
+}
+
 char uart_receive() {
 
     os_status_t status = sem_wait(&uart0_rx_sem, OS_FOREVER);
@@ -75,11 +87,40 @@ char uart_receive() {
     char data = 0;
 
     if (status == OS_OK) {
+        res_acquire(res_id,OS_FOREVER);
         data = uart0_rx_buf[rx0_tail];
         rx0_tail = (rx0_tail + 1) % BUF_SIZE;
+        res_release(res_id);
     }
 
     return data;
+
+}
+
+os_status_t uart_send_string(const char *data) {
+
+    if (data == NULL) {
+        return OS_ERROR;
+    }
+
+    os_status_t status;
+
+    res_acquire(res_id,OS_FOREVER);
+    while (*data != '\0') {
+
+        status = uart_transmit_raw(*data);
+        if(status == OS_OK) {
+            data++;
+            continue;
+        } else {
+            res_release(res_id);
+            return status;
+        }
+
+    }
+    res_release(res_id);
+
+    return OS_OK;
 
 }
 
