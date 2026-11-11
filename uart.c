@@ -6,6 +6,7 @@
  */
 
 #include "os.h"
+#include "tm4c123gh6pm.h"
 
 #define BUF_SIZE 128
 
@@ -14,16 +15,18 @@
 char uart0_tx_buf[BUF_SIZE];
 char uart0_rx_buf[BUF_SIZE];
 
-uint8_t tx0_buf_head, tx0_buf_tail;
-uint8_t rx0_buf_head, rx0_buf_tail;
+uint8_t tx0_head, tx0_tail;
+uint8_t rx0_head, rx0_tail;
 
 volatile sem_t uart0_tx_sem;
 volatile sem_t uart0_rx_sem;
 
+const res_id_t res_id = RES_UART_TX;
+
 void uart_init() {
 
-    tx0_buf_head = 0; tx0_buf_tail = 0;
-    rx0_buf_head = 0; rx0_buf_tail = 0;
+    tx0_head = 0; tx0_tail = 0;
+    rx0_head = 0; rx0_tail = 0;
 
     sem_init(&uart0_tx_sem, BUF_SIZE, BUF_SIZE);
     sem_init(&uart0_rx_sem, 0, BUF_SIZE);
@@ -55,8 +58,8 @@ os_status_t uart_transmit(char data) {
     os_status_t status = sem_wait(&uart0_tx_sem, OS_FOREVER);
 
     if (status == OS_OK) {
-        uart0_tx_buf[tx0_buf_head] = data;
-        tx0_buf_head = (tx0_buf_head + 1) % BUF_SIZE;
+        uart0_tx_buf[tx0_head] = data;
+        tx0_head = (tx0_head + 1) % BUF_SIZE;
 
         UART0_IM_R |= (1<<5);
     }
@@ -72,8 +75,8 @@ char uart_receive() {
     char data = 0;
 
     if (status == OS_OK) {
-        data = uart0_rx_buf[rx0_buf_tail];
-        rx0_buf_tail = (rx0_buf_tail + 1) % BUF_SIZE;
+        data = uart0_rx_buf[rx0_tail];
+        rx0_tail = (rx0_tail + 1) % BUF_SIZE;
     }
 
     return data;
@@ -84,10 +87,10 @@ void UART0_Handler(void) {
 
     if (UART0_MIS_R & (1<<5)) {
 
-        if (tx0_buf_tail != tx0_buf_head) {
+        if (tx0_tail != tx0_head) {
 
-            UART0_DR_R = uart0_tx_buf[tx0_buf_tail];
-            tx0_buf_tail = (tx0_buf_tail + 1) % BUF_SIZE;
+            UART0_DR_R = uart0_tx_buf[tx0_tail];
+            tx0_tail = (tx0_tail + 1) % BUF_SIZE;
             sem_post_isr(&uart0_tx_sem);
 
         } else {
@@ -102,10 +105,10 @@ void UART0_Handler(void) {
 
     if (UART0_MIS_R & (1<<4)) {
 
-        if (rx0_buf_tail != (rx0_buf_head + 1) % BUF_SIZE) {
+        if (rx0_tail != (rx0_head + 1) % BUF_SIZE) {
 
-            uart0_rx_buf[rx0_buf_head] = UART0_DR_R;
-            rx0_buf_head = (rx0_buf_head + 1) % BUF_SIZE;
+            uart0_rx_buf[rx0_head] = UART0_DR_R;
+            rx0_head = (rx0_head + 1) % BUF_SIZE;
             sem_post_isr(&uart0_rx_sem);
 
         } else {
