@@ -28,6 +28,8 @@
 #include "tm4c123gh6pm.h"
 #include "os.h"
 
+#ifndef UART_TEST                       // uart_test.c replaces this test (and its main())
+
 #define TEST_IDLE   0                   // 1: red and blue sleep too, so idle gets to run
 
 #define LED_RED     0x02u               // PF1
@@ -105,3 +107,4 @@ int main(void)
 
     return 0;
 }
+#endif

@@ -5,15 +5,20 @@
  *      Author: Emil Ben, EE23BT024
  */
 
+// Built only when UART_TEST is defined (Project Properties > Build > Predefined Symbols);
+// main.c's main() is left out then, so there is only one main().
+#ifdef UART_TEST
+
 #include "os.h"
 #include "uart.h"
-#include "tmrc123gh6pm.h"
+#include "tm4c123gh6pm.h"
 #include <stdint.h>
+#include <stddef.h>
 
 static uint32_t stack_0[256];
 static uint32_t stack_1[256];
 
-void u0_task(void) {
+void u0_task(void *arg) {
 
     while(1) {
 
@@ -23,7 +28,7 @@ void u0_task(void) {
 
 }
 
-void u1_task(void) {
+void u1_task(void *arg) {
 
     while(1) {
 
@@ -49,4 +54,4 @@ int main(void) {
 
 }
 
-
+#endif /* UART_TEST */

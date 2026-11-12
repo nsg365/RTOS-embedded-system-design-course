@@ -160,9 +160,11 @@ typedef struct {
     uint32_t    taken_at;               // tick when last acquired, for max_hold_ticks
 } resource_t;
 
+// One entry per res_id_t, in the same order as the enum in os.h
 static resource_t res_table[RES_COUNT] = {
-    { { NULL, NULL }, { "uart_tx", 0, 0, 0 }, 0 },  // RES_UART_TX
-    { { NULL, NULL }, { "results", 0, 0, 0 }, 0 },  // RES_RESULTS
+    { { NULL, NULL }, { "uart0_tx", 0, 0, 0 }, 0 }, // RES_UART0_TX
+    { { NULL, NULL }, { "uart1_tx", 0, 0, 0 }, 0 }, // RES_UART1_TX
+    { { NULL, NULL }, { "results",  0, 0, 0 }, 0 }, // RES_RESULTS
 };
 
 os_status_t res_acquire(res_id_t id, uint32_t timeout_ms)
