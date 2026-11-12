@@ -8,6 +8,9 @@
 #include "tm4c123gh6pm.h"
 #include "os.h"
 #include "uart.h"
+#include <stdlib.h>
+#include <stdint.h>
+#include <stddef.h>
 
 static uart_t uart0_instance = {
 
