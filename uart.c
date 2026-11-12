@@ -64,7 +64,7 @@ void uart0_init() {
     UART0_CTL_R &= 0xFFFFFFFE;
 
     //Baud Rate 115200
-    UART0_IBRD_R = 0xA;
+    UART0_IBRD_R = 0x8;
     UART0_FBRD_R = 0x2C;
 
     UART0_LCRH_R = 0x60;          // 8-bit, no parity, 1 stop
@@ -94,7 +94,7 @@ void uart1_init() {
     UART1_CTL_R &= 0xFFFFFFFE;
 
     //Baud Rate 115200
-    UART1_IBRD_R = 0xA;
+    UART1_IBRD_R = 0x8;
     UART1_FBRD_R = 0x2C;
 
     UART1_LCRH_R = 0x60;          // 8-bit, no parity, 1 stop
