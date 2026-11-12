@@ -5,10 +5,11 @@
  *      Author: Emil Ben, EE23BT024
  */
 
-#include "os.h"
-
 #ifndef UART_H_
 #define UART_H_
+
+#include "os.h"
+#include <stdint.h>
 
 #define BUF_SIZE 128
 

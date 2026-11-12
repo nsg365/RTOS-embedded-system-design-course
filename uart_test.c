@@ -40,10 +40,10 @@ void u1_task(void *arg) {
 
 int main(void) {
 
+    os_init();
+
     uart0_init();
     uart1_init();
-
-    os_init();
 
     os_task_create(u0_task, NULL, "uart0", 1, stack_0, 256);
     os_task_create(u1_task, NULL, "uart1", 1, stack_1, 256);

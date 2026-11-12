@@ -53,6 +53,7 @@ void uart0_init() {
     sem_init(&(uart0->rx_sem), 0, BUF_SIZE);
 
     SYSCTL_RCGCUART_R |= 0x01;
+    while ((SYSCTL_PRUART_R & 0x01) == 0);
 
     SYSCTL_RCGCGPIO_R |= 0x01;
     while ((SYSCTL_PRGPIO_R & 0x01) == 0);
@@ -83,6 +84,7 @@ void uart1_init() {
     sem_init(&(uart1->rx_sem), 0, BUF_SIZE);
 
     SYSCTL_RCGCUART_R |= 0x02;
+    while ((SYSCTL_PRUART_R & 0x02) == 0);
 
     SYSCTL_RCGCGPIO_R |= 0x02;
     while ((SYSCTL_PRGPIO_R & 0x02) == 0);
