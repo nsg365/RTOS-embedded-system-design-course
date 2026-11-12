@@ -10,10 +10,41 @@
 #ifndef UART_H_
 #define UART_H_
 
-void uart_init();
+#define BUF_SIZE 128
 
-os_status_t uart_transmit(char data);
+typedef struct {
 
-char uart_receive();
+    volatile uint32_t * const data_reg;
+    volatile uint32_t * const im_reg;
+    volatile uint32_t * const mis_reg;
+    volatile uint32_t * const icr_reg;
+
+    char tx_buf[BUF_SIZE];
+    char rx_buf[BUF_SIZE];
+
+    uint8_t tx_head;
+    uint8_t tx_tail;
+    uint8_t rx_head;
+    uint8_t rx_tail;
+
+    sem_t tx_sem;
+    sem_t rx_sem;
+
+    res_id_t res_id;
+
+} uart_t;
+
+extern uart_t * const uart0;
+extern uart_t * const uart1;
+
+void uart0_init();
+
+void uart1_init();
+
+os_status_t uart_transmit(uart_t *uart, char data);
+
+char uart_receive(uart_t *uart);
+
+os_status_t uart_send_string(uart_t *uart, const char *data);
 
 #endif /* UART_H_ */

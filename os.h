@@ -72,7 +72,8 @@ os_status_t mutex_unlock(mutex_t *m);   // OS_ERROR if caller is not the owner
 
 // Resource manager (P3)
 typedef enum {
-    RES_UART_TX,                        // UART transmit (terminal output)
+    RES_UART0_TX,                        // UART transmit (terminal output)
+    RES_UART1_TX,
     RES_RESULTS,                        // FFT results shared T1 -> T2
     RES_COUNT
 } res_id_t;
