@@ -22,9 +22,9 @@ static uart_t uart0_instance = {
     .tx_head = 0,
     .tx_tail = 0,
     .rx_head = 0,
-    .rx_tail = 0
+    .rx_tail = 0,
 
-    .res_id = RES_UART0_TX;
+    .res_id = RES_UART0_TX
 
 };
 
@@ -38,9 +38,9 @@ static uart_t uart1_instance = {
     .tx_head = 0,
     .tx_tail = 0,
     .rx_head = 0,
-    .rx_tail = 0
+    .rx_tail = 0,
 
-    .res_id = RES_UART1_TX;
+    .res_id = RES_UART1_TX
 
 };
 
