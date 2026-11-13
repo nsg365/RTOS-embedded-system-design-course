@@ -19,6 +19,8 @@ static uart_t uart0_instance = {
     .mis_reg = &UART0_MIS_R,
     .icr_reg = &UART0_ICR_R,
 
+    .tx_active = 0,
+
     .tx_head = 0,
     .tx_tail = 0,
     .rx_head = 0,
@@ -35,6 +37,8 @@ static uart_t uart1_instance = {
     .mis_reg = &UART1_MIS_R,
     .icr_reg = &UART1_ICR_R,
 
+    .tx_active = 0,
+
     .tx_head = 0,
     .tx_tail = 0,
     .rx_head = 0,
@@ -49,8 +53,8 @@ uart_t * const uart1 = &uart1_instance;
 
 void uart0_init() {
 
-    sem_init(&(uart0->tx_sem), BUF_SIZE, BUF_SIZE);
-    sem_init(&(uart0->rx_sem), 0, BUF_SIZE);
+    sem_init(&(uart0->tx_sem), BUF_SIZE-1, BUF_SIZE-1);
+    sem_init(&(uart0->rx_sem), 0, BUF_SIZE-1);
 
     SYSCTL_RCGCUART_R |= 0x01;
     while ((SYSCTL_PRUART_R & 0x01) == 0);
@@ -69,12 +73,12 @@ void uart0_init() {
     UART0_FBRD_R = 0x2C;
 
     UART0_LCRH_R = 0x60;          // 8-bit, no parity, 1 stop
-    UART0_CC_R = 0x00;
+    UART0_CC_R = 0x05;
 
     UART0_IM_R |= (1<<4);
     NVIC_EN0_R |= (1<<5);
 
-    UART0_CTL_R |= 0x301;
+    UART0_CTL_R |= 0x311;
 
 }
 
@@ -100,12 +104,12 @@ void uart1_init() {
     UART1_FBRD_R = 0x2C;
 
     UART1_LCRH_R = 0x60;          // 8-bit, no parity, 1 stop
-    UART1_CC_R = 0x00;
+    UART1_CC_R = 0x05;
 
     UART1_IM_R |= (1<<4);
     NVIC_EN0_R |= (1<<6);
 
-    UART1_CTL_R |= 0x301;
+    UART1_CTL_R |= 0x311;
 
 }
 
@@ -118,8 +122,21 @@ static os_status_t uart_transmit_raw(uart_t *uart, char data) {
     os_status_t status = sem_wait(&(uart->tx_sem), OS_FOREVER);
 
     if (status == OS_OK) {
-        uart->tx_buf[uart->tx_head] = data;
-        uart->tx_head = (uart->tx_head + 1) % BUF_SIZE;
+
+        *(uart->im_reg) &= ~(1 << 5);
+
+        if (!(uart->tx_active)) {
+
+            uart->tx_active = 1;
+            *(uart->data_reg) = data;
+            sem_post(&(uart->tx_sem));
+
+        } else {
+
+            uart->tx_buf[uart->tx_head] = data;
+            uart->tx_head = (uart->tx_head + 1) % BUF_SIZE;
+
+        }
 
         *(uart->im_reg) |= (1<<5);
     }
@@ -198,6 +215,8 @@ void UART_Handler(uart_t *uart) {
 
     if (int_status & (1<<5)) {
 
+        *(uart->icr_reg) = (1<<5);
+
         if (uart->tx_tail != uart->tx_head) {
 
             *(uart->data_reg) = uart->tx_buf[uart->tx_tail];
@@ -206,15 +225,16 @@ void UART_Handler(uart_t *uart) {
 
         } else {
 
+            uart->tx_active = 0;
             *(uart->im_reg) &= ~(1<<5);
 
         }
 
-        *(uart->icr_reg) = (1<<5);
-
     }
 
     if (int_status & (1<<4)) {
+
+        *(uart->icr_reg) = (1<<4);
 
         if (uart->rx_tail != (uart->rx_head + 1) % BUF_SIZE) {
 
@@ -225,8 +245,6 @@ void UART_Handler(uart_t *uart) {
         } else {
             char dropped = *(uart->data_reg);
         }
-
-        *(uart->icr_reg) = (1<<4);
 
     }
 

@@ -21,20 +21,20 @@ static uint32_t stack_1[256];
 void u0_task(void *arg) {
 
     while(1) {
-
-        uart_send_string(uart0,"UART0, not dead yet :)\r\n");
-
+        uart_send_string(uart0,"UART0, finally alive! \n\r");
+        int i=0;
+        while (i<200000) {
+            i++;
+        }
     }
 
 }
 
 void u1_task(void *arg) {
 
-    while(1) {
+    uart_send_string(uart1,"B\r\n");
 
-        uart_send_string(uart1,"UART1, because why not?\r\n");
-
-    }
+    while(1);
 
 }
 

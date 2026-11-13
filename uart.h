@@ -20,6 +20,8 @@ typedef struct {
     volatile uint32_t * const mis_reg;
     volatile uint32_t * const icr_reg;
 
+    volatile uint32_t tx_active;
+
     char tx_buf[BUF_SIZE];
     char rx_buf[BUF_SIZE];
 
