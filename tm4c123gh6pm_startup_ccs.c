@@ -59,6 +59,7 @@ extern void SysTick_Handler(void);      // os_core.c: RTOS tick
 extern void os_hardfault_handler(void); // os_asm.asm: fault report
 extern void UART0_Handler(void);
 extern void UART1_Handler(void);
+extern void ADCSeq0_Handler(void);
 
 //*****************************************************************************
 //
@@ -101,7 +102,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // PWM Generator 1
     IntDefaultHandler,                      // PWM Generator 2
     IntDefaultHandler,                      // Quadrature Encoder 0
-    IntDefaultHandler,                      // ADC Sequence 0
+    ADCSeq0_Handler,                           // ADC Sequence 0
     IntDefaultHandler,                      // ADC Sequence 1
     IntDefaultHandler,                      // ADC Sequence 2
     IntDefaultHandler,                      // ADC Sequence 3
