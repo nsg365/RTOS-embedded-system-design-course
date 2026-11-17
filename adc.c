@@ -12,15 +12,17 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Can we add a feature to adjust sample rate???
+// If needed, make a new function to pass custom sampling rates
 // Uses Timer0 A, it performs the initialization as well. If using this, do NOT mess with Timer0 A before or after initializing ADC!
 
-adc_t adc0_instance = {
+static adc_t adc0_instance = {
 
-    .activeBuf = buf0;
-    .readyBuf = NULL;
+    .activeBuf = adc0_instance.buf0,
+    .readyBuf = NULL,
 
-    .head = 0;
+    .head = 0,
+    .ready = 0,
+    .overrun = 0
 
 };
 
@@ -29,7 +31,7 @@ adc_t * const adc0 = &adc0_instance;
 static void timera_init(void) {
 
     SYSCTL_RCGCTIMER_R |= 0x1;
-    while (SYSCTL_PRTIMER_R & 0x1 == 0);
+    while ((SYSCTL_PRTIMER_R & 0x1) == 0);
 
     TIMER0_CTL_R &= ~(0x1);
 
@@ -68,7 +70,7 @@ void adc0_init(void) {
 
     ADC0_ACTSS_R |= 0x1;
 
-    NVIC_EN0_R |= (1<<14);
+    NVIC_EN0_R = (1<<14);
 
     timera_init();
 
@@ -76,34 +78,56 @@ void adc0_init(void) {
 
 uint16_t * adc0_get() {
 
-    os_status_t status = sem_wait(&(adc0->ready_sem), OS_FOREVER);
+    uint16_t * buf = NULL;
 
-    if (status == OS_OK) {
+    while (buf == NULL) {
 
-        return readyBuf;
+        os_status_t status = sem_wait(&(adc0->ready_sem), OS_FOREVER);
+
+        if (status != OS_OK) {
+            return NULL;
+        }
+
+        NVIC_DIS0_R = (1<<14);
+
+        if (adc0->ready) {
+
+            adc0->ready = 0;
+            buf = adc0->readyBuf;
+
+        }
+
+        NVIC_EN0_R = (1<<14);
 
     }
 
-    return NULL;
+    return buf;
 
 }
 
 void ADCSeq0_Handler(void) {
 
-    ADC0_ISC_R |= 0x1;
+    ADC0_ISC_R = 0x1;
 
-    adc0->activeBuf[(adc->head)++] = (uint16_t)(ADC0_SSFIFO0_R & 0xFFF);
+    adc0->activeBuf[(adc0->head)++] = (uint16_t)(ADC0_SSFIFO0_R & 0xFFF);
 
     if (adc0->head == BUF_SIZE) {
 
-        adc0->activeBuf = adc0->readyBuf;
-        adc0->readyBuf = (adc0->activeBuf == adc0->buf0) ? adc0->buf1 : adc0->buf0;
+        if (adc0->ready) {
+
+            (adc0->overrun)++;
+
+        }
+
+        adc0->readyBuf = adc0->activeBuf;
+        adc0->activeBuf = (adc0->readyBuf == adc0->buf0) ? adc0->buf1 : adc0->buf0;
 
         adc0->head = 0;
+        adc0->ready = 1;
+
+        sem_post_isr(&(adc0->ready_sem));
 
     }
-
-    sem_post_isr(&(adc0->ready_sem));
 
 }
 

@@ -15,14 +15,16 @@ typedef struct {
     uint16_t buf0[BUF_SIZE];
     uint16_t buf1[BUF_SIZE];
 
-    volatile uint16_t * activeBuf;
-    volatile uint16_t * readyBuf;
+    uint16_t * volatile activeBuf;
+    uint16_t * volatile readyBuf;
 
     volatile uint32_t head;
+    volatile uint32_t ready;
+    volatile uint32_t overrun;
 
     sem_t ready_sem;
 
-} adc_t
+} adc_t;
 
 extern adc_t * const adc0;
 
