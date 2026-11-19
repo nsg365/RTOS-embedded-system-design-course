@@ -28,7 +28,7 @@
 #include "tm4c123gh6pm.h"
 #include "os.h"
 
-#ifndef UART_TEST                       // uart_test.c replaces this test (and its main())
+#if !defined(UART_TEST) && !defined(SYNC_TEST) // uart_test.c / sync_test.c replace this test (and its main())
 
 #define TEST_IDLE   0                   // 1: red and blue sleep too, so idle gets to run
 
