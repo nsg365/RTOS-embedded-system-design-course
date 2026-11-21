@@ -21,11 +21,20 @@
  *   Semaphore wake-up
  *     600  H: sem_wait(&sem_go, OS_FOREVER) -> blocks
  *     650  L: sem_post(&sem_go) -> H (higher priority) must run before L's next line
+ *   Message queue (capacity 2) and task info
+ *     700  H: mq_receive on the empty queue, 20 ms timeout -> OS_TIMEOUT
+ *     730  L: sends 10, 20 (OK); sends 30 with timeout 0 -> OS_TIMEOUT (full);
+ *          sends 30 again, waiting -> blocks
+ *     750  H: receives 10 (frees a place, so L's send of 30 completes), 20, 30 - in order
+ *          H: os_task_count() == 4; os_get_task_info() for idle and H look right
  *
- * Result (about 0.7 s after reset):
+ * Result (about 0.9 s after reset):
  *   Blue while running, then green = all checks passed, red = something failed.
  *   Expressions view: sync_fail (0 = pass; bit n set = check n failed, see CHK_*),
  *   plus the raw times/priorities below.
+ *
+ * TEST_OVERFLOW 1: 2 s after the result, H overwrites the lowest word of L's stack
+ * (what a real overflow would do). Within 1 ms the LED turns yellow and os_fault_task = "L".
  */
 #ifdef SYNC_TEST
 
@@ -34,6 +43,8 @@
 #include "tm4c123gh6pm.h"
 #include "os.h"
 #include "os_kernel.h"                  // test only: reads os_curr->prio to see the boost
+
+#define TEST_OVERFLOW 0                 // 1: fake a stack overflow in L after the result
 
 #define LED_RED     0x02u               // PF1
 #define LED_BLUE    0x04u               // PF2
@@ -54,9 +65,15 @@
 #define CHK_SEM_TIMEOUT     (1u << 7)   // sem_wait timed out after 50 ms
 #define CHK_RESTORE_AFTER_TO (1u << 8)  // L back to priority 3 after a timed-out waiter
 #define CHK_SEM_WAKE        (1u << 9)   // sem_post woke H immediately
+#define CHK_MQ_EMPTY_TO     (1u << 10)  // mq_receive on an empty queue timed out after 20 ms
+#define CHK_MQ_FULL         (1u << 11)  // mq_send with timeout 0 on a full queue -> OS_TIMEOUT
+#define CHK_MQ_ORDER        (1u << 12)  // received 10, 20, 30 in that order
+#define CHK_TASK_INFO       (1u << 13)  // os_task_count / os_get_task_info values
 
-static mutex_t mtx, mtx2;
-static sem_t   sem_never, sem_go;
+static mutex_t  mtx, mtx2;
+static sem_t    sem_never, sem_go;
+static mq_t     q;
+static uint32_t q_buf[2];               // room for 2 messages of one uint32_t each
 
 // Results, for the Expressions view
 volatile uint32_t sync_fail = 0xFFFFFFFFu;  // stays all-ones until H finishes
@@ -64,6 +81,8 @@ volatile uint32_t h_req, h_got, m_first_run;
 volatile uint32_t l_min_prio = 0xFFu, l_prio_after, l_prio_after2;
 volatile uint32_t mtx_to_ms, sem_to_ms;
 volatile uint32_t post_done;
+volatile uint32_t mq_to_ms, mq_full_st, mq_got[3];
+volatile os_task_info_t info_idle, info_h;
 
 static uint32_t stack_h[256];
 static uint32_t stack_m[256];
@@ -87,7 +106,7 @@ static void busy_until(uint32_t t)
 static void h_task(void *arg)
 {
     uint32_t    fail = 0;
-    uint32_t    t0;
+    uint32_t    t0, i;
     os_status_t st;
 
     (void)arg;
@@ -125,8 +144,35 @@ static void h_task(void *arg)
     if (st != OS_OK || post_done != 0)  // post_done = 1 means L ran on after posting
         fail |= CHK_SEM_WAKE;
 
-    // Checks on what L and M recorded
+    // Message queue: empty -> timeout
     sleep_until(700);
+    t0 = os_ticks();
+    st = mq_receive(&q, (void *)&mq_got[0], 20);
+    mq_to_ms = os_ticks() - t0;
+    if (st != OS_TIMEOUT || mq_to_ms < 20 || mq_to_ms > 22)
+        fail |= CHK_MQ_EMPTY_TO;
+
+    // Message queue: L has filled it (10, 20) and is waiting to send 30
+    sleep_until(750);
+    for (i = 0; i < 3; i++) {
+        if (mq_receive(&q, (void *)&mq_got[i], 100) != OS_OK)
+            mq_got[i] = 0;
+    }
+    if (mq_got[0] != 10 || mq_got[1] != 20 || mq_got[2] != 30)
+        fail |= CHK_MQ_ORDER;
+
+    // Task info: idle (index 0), H, M, L
+    os_get_task_info(0, (os_task_info_t *)&info_idle);
+    os_get_task_info(1, (os_task_info_t *)&info_h);
+    if (os_task_count() != 4
+        || info_idle.prio != OS_PRIO_IDLE || info_idle.name[0] != 'i'
+        || info_h.prio != PRIO_H || info_h.state != TASK_RUNNING || info_h.name[0] != 'H'
+        || info_h.stack_free_words == 0 || info_h.stack_free_words >= 256
+        || info_idle.cpu_percent + info_h.cpu_percent > 100)
+        fail |= CHK_TASK_INFO;
+
+    // Checks on what L and M recorded
+    sleep_until(900);
     if (l_min_prio != PRIO_H)
         fail |= CHK_PI_BOOST;
     if (l_prio_after != PRIO_L)
@@ -137,9 +183,16 @@ static void h_task(void *arg)
         fail |= CHK_PI_WAIT;
     if (l_prio_after2 != PRIO_L)
         fail |= CHK_RESTORE_AFTER_TO;
+    if (mq_full_st != (uint32_t)OS_TIMEOUT)
+        fail |= CHK_MQ_FULL;
 
     sync_fail = fail;
     GPIO_PORTF_DATA_R = (fail == 0) ? LED_GREEN : LED_RED;
+
+#if TEST_OVERFLOW
+    os_sleep(2000);
+    stack_l[0] = 0;                     // L's canary is gone: SysTick should halt within 1 ms
+#endif
 
     while (1)
         os_sleep(1000);
@@ -159,6 +212,8 @@ static void m_task(void *arg)
 
 static void l_task(void *arg)
 {
+    uint32_t msg;
+
     (void)arg;
 
     // Priority inheritance: hold mtx while working until 100
@@ -183,6 +238,16 @@ static void l_task(void *arg)
     sem_post(&sem_go);                  // H is higher priority: it should run right here
     post_done = 1;
 
+    // Message queue: fill it, then wait for room for a third message
+    sleep_until(730);
+    msg = 10;
+    mq_send(&q, &msg, OS_FOREVER);
+    msg = 20;
+    mq_send(&q, &msg, OS_FOREVER);
+    msg = 30;
+    mq_full_st = (uint32_t)mq_send(&q, &msg, 0);    // full: should not wait
+    mq_send(&q, &msg, OS_FOREVER);      // waits until H takes one out at 750
+
     while (1)
         os_sleep(1000);
 }
@@ -200,6 +265,7 @@ int main(void)
     mutex_init(&mtx2);
     sem_init(&sem_never, 0, 1);
     sem_init(&sem_go, 0, 1);
+    mq_init(&q, q_buf, sizeof(uint32_t), 2);
 
     os_init();
     os_task_create(h_task, NULL, "H", PRIO_H, stack_h, 256);

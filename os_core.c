@@ -22,6 +22,11 @@ volatile uint32_t os_switch_count;
 volatile uint32_t os_idle_ticks;
 volatile uint32_t os_fault_pc;
 volatile uint32_t os_fault_lr;
+const char * volatile os_fault_task;   // task whose stack overflowed (NULL = none)
+
+#define FAULT_LEDS_HARDFAULT 0x0Eu      // white: red + blue + green
+#define FAULT_LEDS_STACK     0x0Au      // yellow: red + green
+static void fault_halt(uint32_t leds);
 
 static uint32_t idle_stack[OS_MIN_STACK_WORDS];
 
@@ -358,6 +363,14 @@ void SysTick_Handler(void)
     // Signed difference so it still works when tick_count wraps around.
     for (i = 0; i < num_tasks; i++) {
         t = &tcbs[i];
+
+        // Stack overflow: the lowest stack word has lost its canary, so the task has
+        // used its whole stack (and may already have written past it). Stop here.
+        if (t->stack_base[0] != OS_STACK_CANARY) {
+            os_fault_task = t->name;
+            fault_halt(FAULT_LEDS_STACK);
+        }
+
         if ((int32_t)(tick_count - t->wake_tick) < 0)
             continue;
         if (t->state == TASK_SLEEPING) {
@@ -381,6 +394,39 @@ void SysTick_Handler(void)
     os_crit_exit(primask);
 }
 
+// Statistics
+
+uint32_t os_task_count(void)
+{
+    return num_tasks;                   // including the idle task (index 0)
+}
+
+// Snapshot of task 'index' (0 = idle, then in creation order).
+os_status_t os_get_task_info(uint32_t index, os_task_info_t *out)
+{
+    os_tcb_t *t;
+    uint32_t  primask, i, now;
+
+    if (index >= num_tasks || out == NULL)
+        return OS_ERROR;
+    t = &tcbs[index];
+
+    primask = os_crit_enter();          // all fields from the same moment
+    out->name  = t->name;
+    out->prio  = t->prio;               // effective: shows a priority-inheritance boost
+    out->state = t->state;
+    now = tick_count;
+    // Share of all ticks since os_start() (64-bit so run_ticks * 100 can't overflow)
+    out->cpu_percent = (now == 0) ? 0 : (uint8_t)(((uint64_t)t->run_ticks * 100u) / now);
+    os_crit_exit(primask);
+
+    // Unused stack: words at the bottom that still hold the canary
+    for (i = 0; i < t->stack_words && t->stack_base[i] == OS_STACK_CANARY; i++) {
+    }
+    out->stack_free_words = i;
+    return OS_OK;
+}
+
 // Fault report
 
 /* frame points at the stacked R0..xPSR of the code that faulted. */
@@ -388,14 +434,20 @@ void os_fault_report(uint32_t *frame)
 {
     os_fault_lr = frame[5];
     os_fault_pc = frame[6];             /* look this address up in the .map file */
+    fault_halt(FAULT_LEDS_HARDFAULT);
+}
 
-    /* All three LEDs on (white) = kernel fault */
+// Show the fault colour on the RGB LED and stop everything (interrupts off, never returns).
+static void fault_halt(uint32_t leds)
+{
+    os_crit_enter();                    // no task or ISR may change the LEDs after this
+
     SYSCTL_RCGCGPIO_R |= 0x20;
     while ((SYSCTL_PRGPIO_R & 0x20) == 0) {
     }
     GPIO_PORTF_DIR_R |= 0x0E;
     GPIO_PORTF_DEN_R |= 0x0E;
-    GPIO_PORTF_DATA_R |= 0x0E;
+    GPIO_PORTF_DATA_R = (GPIO_PORTF_DATA_R & ~0x0Eu) | leds;
 
     for (;;) {
     }

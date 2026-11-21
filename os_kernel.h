@@ -7,7 +7,8 @@
 #include "os.h"
 #include "tm4c123gh6pm.h"
 
-#define OS_STACK_CANARY     0xDEADBEEFu // fills every task stack; untouched words = unused stack
+#define OS_STACK_CANARY     0xDEADBEEFu // fills every task stack; untouched words = unused stack.
+                                        // SysTick halts (yellow LED) if a task's lowest word changes.
 
 // Task Control Block. 'sp' MUST stay the first member: os_asm.asm reads it at offset 0.
 typedef struct os_tcb {

@@ -10,6 +10,7 @@
 // So these calls are for tasks only, and never with interrupts already disabled.
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 #include "os_kernel.h"
 
 // Semaphores
@@ -216,5 +217,64 @@ os_status_t res_get_stats(res_id_t id, res_stats_t *out)
     primask = os_crit_enter();          // copy all fields from the same moment
     *out = res_table[id].stats;
     os_crit_exit(primask);
+    return OS_OK;
+}
+
+// Message queue: a ring buffer of fixed-size messages, copied in and out.
+// 'slots' counts free places and 'items' counts queued messages, so all 'capacity'
+// places can be used (no empty slot needed to tell full from empty). Tasks only.
+
+void mq_init(mq_t *q, void *buf, uint32_t msg_size, uint32_t capacity)
+{
+    q->buf      = (uint8_t *)buf;
+    q->msg_size = msg_size;
+    q->capacity = capacity;
+    q->head     = 0;                    // next place to write
+    q->tail     = 0;                    // next place to read
+    sem_init(&q->slots, (int32_t)capacity, (int32_t)capacity);
+    sem_init(&q->items, 0, (int32_t)capacity);
+}
+
+// Copy one message in, waiting up to timeout_ms for a free place.
+os_status_t mq_send(mq_t *q, const void *msg, uint32_t timeout_ms)
+{
+    uint32_t    primask;
+    os_status_t st;
+
+    if (q == NULL || msg == NULL)
+        return OS_ERROR;
+
+    st = sem_wait(&q->slots, timeout_ms);   // a free place is now reserved for us
+    if (st != OS_OK)
+        return st;
+
+    primask = os_crit_enter();          // two senders must not write the same place
+    memcpy(q->buf + q->head * q->msg_size, msg, q->msg_size);
+    q->head = (q->head + 1) % q->capacity;
+    os_crit_exit(primask);
+
+    sem_post(&q->items);                // wakes a waiting receiver, if any
+    return OS_OK;
+}
+
+// Copy the oldest message out, waiting up to timeout_ms for one to arrive.
+os_status_t mq_receive(mq_t *q, void *msg, uint32_t timeout_ms)
+{
+    uint32_t    primask;
+    os_status_t st;
+
+    if (q == NULL || msg == NULL)
+        return OS_ERROR;
+
+    st = sem_wait(&q->items, timeout_ms);   // a queued message is now ours
+    if (st != OS_OK)
+        return st;
+
+    primask = os_crit_enter();          // two receivers must not read the same place
+    memcpy(msg, q->buf + q->tail * q->msg_size, q->msg_size);
+    q->tail = (q->tail + 1) % q->capacity;
+    os_crit_exit(primask);
+
+    sem_post(&q->slots);                // wakes a waiting sender, if any
     return OS_OK;
 }

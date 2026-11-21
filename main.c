@@ -23,6 +23,7 @@
  *   - LED dark most of the time, with short green / red / blue flashes.
  *   - os_idle_ticks rises (idle runs whenever all three tasks are asleep).
  *   - White LED (all three on) = HardFault; read os_fault_pc and look it up in RTOS.map.
+ *   - Yellow LED (red + green) = stack overflow; os_fault_task names the task.
  */
 #include <stdint.h>
 #include "tm4c123gh6pm.h"
