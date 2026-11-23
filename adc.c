@@ -40,7 +40,6 @@ static void timera_init(void) {
     TIMER0_TAILR_R = 1600 - 1;
 
     TIMER0_CTL_R |= 0x20; //adc trigger
-    TIMER0_CTL_R |= 0x1;  //enabling
 
 }
 
@@ -73,6 +72,12 @@ void adc0_init(void) {
     NVIC_EN0_R = (1<<14);
 
     timera_init();
+
+}
+
+void adc0_start(void) {
+
+    TIMER0_CTL_R |= 0x1;  //enabling
 
 }
 

@@ -29,6 +29,7 @@ typedef struct {
 extern adc_t * const adc0;
 
 void adc0_init(void);
+void adc0_start(void);
 uint16_t * adc0_get();
 
 #endif /* ADC_H_ */
