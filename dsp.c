@@ -27,6 +27,18 @@ void dsp_init(void) {
     }
 }
 
+static void apply_hann_window(void) {
+    uint32_t i;
+
+    fft_real[0] = 0.0f; // w[0] = 0.5 * (1 - cos(0)) = 0
+    for (i = 1U; i < HALF_N; i++) {
+        float w = 0.5f * (1.0f - cos_table[i]);
+        fft_real[i] *= w;
+        fft_real[DSP_FFT_SIZE - i] *= w;
+    }
+    // At i = HALF_N, cos(pi) = -1 so w = 1.0f (fft_real[HALF_N] unchanged)
+}
+
 static void load_and_strip_dc(const uint16_t *samples) {
     uint32_t i;
     float sum = 0.0f;
@@ -128,12 +140,12 @@ float dsp_calc_rms(const uint16_t *samples) {
 
 float dsp_calc_dominant_freq(const uint16_t *samples) {
     load_and_strip_dc(samples);
+    apply_hann_window();
     run_fft_and_mag();
 
     float peak_mag = 0.0f;
     uint32_t k1 = find_fundamental_bin(&peak_mag);
 
-    // Return 0 Hz if input is flat silence/noise
     if (peak_mag < 0.5f) {
         return 0.0f;
     }
@@ -146,40 +158,41 @@ void dsp_calc_harmonics(const uint16_t *samples, dsp_harmonics_t *out) {
     out->num_harmonics = 0;
 
     load_and_strip_dc(samples);
+    apply_hann_window();
     run_fft_and_mag();
 
     float fund_mag = 0.0f;
     uint32_t k1 = find_fundamental_bin(&fund_mag);
 
-    if (fund_mag < 0.5f) {
+    if (k1 == 0U || fund_mag < 0.5f) {
         return;
     }
 
     out->fundamental_hz = (float)k1 * BIN_HZ;
 
-    // Only count a harmonic if it is at least 5% of the fundamental amplitude
-    float threshold = fund_mag * 0.05f;
+    float threshold = fund_mag * 0.10f; // 10% of fundamental
     uint32_t n;
 
-    for (n = 2; n <= (DSP_MAX_HARMONICS + 1U); n++) {
-        uint32_t expected_bin = n * k1;
-        if (expected_bin >= HALF_N) {
-            break; // Exceeded 5 kHz Nyquist limit
+    for (n = 2U; out->num_harmonics < DSP_MAX_HARMONICS; n++) {
+        uint32_t target = n * k1;
+        if (target >= (HALF_N - 1U)) {
+            break;
         }
 
-        // Check expected_bin +/- 1 to handle frequencies between bin centers
-        uint32_t start = (expected_bin > 1U) ? (expected_bin - 1U) : 1U;
-        uint32_t end   = ((expected_bin + 1U) < HALF_N) ? (expected_bin + 1U) : (HALF_N - 1U);
+        // Check target bin and its immediate +/- 1 neighbors
+        uint32_t best_bin = target;
+        float best_mag = fft_mag[target];
 
-        uint32_t best_bin = start;
-        uint32_t b;
-        for (b = start + 1U; b <= end; b++) {
-            if (fft_mag[b] > fft_mag[best_bin]) {
-                best_bin = b;
-            }
+        if (target > (k1 + 1U) && fft_mag[target - 1U] > best_mag) {
+            best_mag = fft_mag[target - 1U];
+            best_bin = target - 1U;
+        }
+        if ((target + 1U) < HALF_N && fft_mag[target + 1U] > best_mag) {
+            best_mag = fft_mag[target + 1U];
+            best_bin = target + 1U;
         }
 
-        if (fft_mag[best_bin] >= threshold) {
+        if (best_mag >= threshold) {
             out->harmonics_hz[out->num_harmonics++] = (float)best_bin * BIN_HZ;
         }
     }

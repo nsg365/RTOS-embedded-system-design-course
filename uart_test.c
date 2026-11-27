@@ -9,49 +9,69 @@
 // main.c's main() is left out then, so there is only one main().
 #ifdef UART_TEST
 
-#include "os.h"
-#include "uart.h"
-#include "tm4c123gh6pm.h"
-#include <stdint.h>
 #include <stddef.h>
+#include "tm4c123gh6pm.h"
+#include "os.h"
+#include "dsp.h"
+#include "tasks.h"
+#include "uart.h"
 
-static uint32_t stack_0[256];
-static uint32_t stack_1[256];
+// uart.h defines BUF_SIZE as 128 and adc.h defines BUF_SIZE as 256;
+// undefine here to avoid macro redefinition warnings in main.c.
+#undef BUF_SIZE
+#include "adc.h"
 
-void u0_task(void *arg) {
+#define RX_STACK_WORDS  192U
+#define DSP_STACK_WORDS 256U
+#define TX_STACK_WORDS  256U
 
-    while(1) {
-        uart_send_string(uart0,"UART0, finally alive! \n\r");
-        int i=0;
-        while (i<200000) {
-            i++;
-        }
-    }
+// Shared IPC objects
+mq_t             cmd_queue;
+static uint8_t   cmd_queue_buf[CMD_QUEUE_CAPACITY * sizeof(cmd_type_t)];
+sem_t            results_sem;
+shared_results_t g_results;
 
-}
+// Task stacks (OS_MIN_STACK_WORDS is 64)
+static uint32_t uart_rx_stack[RX_STACK_WORDS];
+static uint32_t dsp_stack[DSP_STACK_WORDS];
+static uint32_t uart_tx_stack[TX_STACK_WORDS];
 
-void u1_task(void *arg) {
+static void system_init(void) {
+    // 1. Enable FPU (CP10 and CP11 full access) before any float math runs
+    NVIC_CPAC_R |= (0xFU << 20);
+    __asm(" DSB");
+    __asm(" ISB");
 
-    uart_send_string(uart1,"B\r\n");
-
-    while(1);
-
+    // 2. Force 16 MHz PIOSC with PLL bypassed and no system divider
+    //    Matches OS_CPU_HZ = 16 MHz and TIMER0_TAILR_R = 1600 - 1 (10 kHz)
+    SYSCTL_RCC2_R &= ~0x80000000U;                       // Clear USERCC2 (use RCC)
+    SYSCTL_RCC_R   = (SYSCTL_RCC_R & ~0x00400030U)       // Clear USESYSDIV (bit 22) & OSCSRC (bits 5:4)
+                   | 0x00000810U;                        // Set BYPASS (bit 11) & OSCSRC = PIOSC (0x1)
 }
 
 int main(void) {
+    system_init();
 
     os_init();
-
+    dsp_init();
     uart0_init();
-    uart1_init();
+    adc0_init();
 
-    os_task_create(u0_task, NULL, "uart0", 1, stack_0, 256);
-    os_task_create(u1_task, NULL, "uart1", 1, stack_1, 256);
+    // Initialize IPC primitives
+    sem_init(&results_sem, 0, 1);
+    mq_init(&cmd_queue, cmd_queue_buf, sizeof(cmd_type_t), CMD_QUEUE_CAPACITY);
 
+    // Create tasks (0 = highest priority, 7 = OS_PRIO_IDLE)
+    os_task_create(dsp_task,     NULL, "dsp",     1, dsp_stack,     DSP_STACK_WORDS);
+    os_task_create(uart_tx_task, NULL, "uart_tx", 2, uart_tx_stack, TX_STACK_WORDS);
+    os_task_create(uart_rx_task, NULL, "uart_rx", 3, uart_rx_stack, RX_STACK_WORDS);
+
+    // Start ADC sampling and launch RTOS scheduler (never returns)
+    adc0_start();
     os_start();
 
-    return 0;
-
+    while (1) {
+    }
 }
 
 #endif /* UART_TEST */

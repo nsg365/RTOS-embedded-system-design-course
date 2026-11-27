@@ -8,6 +8,9 @@
 #ifndef ADC_H_
 #define ADC_H_
 
+#include "os.h"
+#include <stdint.h>
+
 #define BUF_SIZE 256
 
 typedef struct {
