@@ -36,7 +36,6 @@ static void apply_hann_window(void) {
         fft_real[i] *= w;
         fft_real[DSP_FFT_SIZE - i] *= w;
     }
-    // At i = HALF_N, cos(pi) = -1 so w = 1.0f (fft_real[HALF_N] unchanged)
 }
 
 static void load_and_strip_dc(const uint16_t *samples) {
@@ -60,7 +59,7 @@ static void load_and_strip_dc(const uint16_t *samples) {
 static void run_fft_and_mag(void) {
     uint32_t i, j, k;
 
-    // 1. Bit-reversal permutation
+    // Bit-reversal permutation
     j = 0;
     for (i = 0; i < DSP_FFT_SIZE; i++) {
         if (i < j) {
@@ -76,7 +75,7 @@ static void run_fft_and_mag(void) {
         j |= bit;
     }
 
-    // 2. Butterfly stages
+    // Butterfly
     uint32_t stage;
     for (stage = 1; stage <= 8; stage++) {
         uint32_t half_size = 1U << (stage - 1U);
@@ -101,7 +100,7 @@ static void run_fft_and_mag(void) {
         }
     }
 
-    // 3. Magnitude spectrum (bins 1..127)
+    // Magnitude
     fft_mag[0] = 0.0f;
     for (k = 1; k < HALF_N; k++) {
         fft_mag[k] = sqrtf((fft_real[k] * fft_real[k]) + (fft_imag[k] * fft_imag[k]));

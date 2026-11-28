@@ -190,7 +190,7 @@ os_status_t uart_send_string(uart_t *uart, const char *data) {
 
     os_status_t status;
 
-    res_acquire(uart->res_id,OS_FOREVER);
+    res_acquire(uart->res_id, OS_FOREVER);
     while (*data != '\0') {
 
         status = uart_transmit_raw(uart,*data);
